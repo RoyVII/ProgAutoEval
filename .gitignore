@@ -1,0 +1,6 @@
+*.o
+*.md
+*/
+*.txt
+*.csv
+__pycache__/ 
