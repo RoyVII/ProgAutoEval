@@ -11,7 +11,7 @@ WARNING = '<span style="color:orangered">'
 FAIL = '<span style="color:red">'
 ENDC = '</span>'
 
-class MainGenerator:
+class AutoEval:
 
 	###################################
 	# CONSTRUCTOR
@@ -120,7 +120,7 @@ class MainGenerator:
 
 	def generate_outputs(self):
 		if self.templateLoaded != True:
-			print("Template not loaded")
+			print("\tTemplate not loaded")
 			return
 
 		user = "solution"
@@ -129,7 +129,7 @@ class MainGenerator:
 		# Go to user dir
 		os.chdir(user)
 
-		print("Generating outputs")
+		print("\tGenerating outputs")
 
 		with open("report_"+user+"_"+self.exerciseName+".md", 'w') as outFile:
 
@@ -214,13 +214,13 @@ class MainGenerator:
 
 	def perform_tests(self, user, cleanFiles=True):
 		if self.templateLoaded != True or self.outputsGenerated != True:
-			print("Template not loaded or outputs not generated")
+			print("\tTemplate not loaded or outputs not generated")
 			return
 
 		# Go to user dir
 		os.chdir(user)
 
-		print("Evaluating "+user)
+		print("\tEvaluating "+user)
 
 		with open("report_"+user+"_"+self.exerciseName+".md", 'w') as outFile:
 
