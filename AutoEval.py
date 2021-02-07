@@ -56,7 +56,7 @@ class AutoEval:
 						self.header = []
 						self.read_header(template)
 					elif len(line) > 2 and line[0:3] == "$$$":
-						self.read_block(template, line[4])
+						self.read_block(template, line[4:].replace("\n", ""))
 					elif len(line) > 2 and line[0:3] == "???":
 						self.read_tests(template)
 
@@ -180,6 +180,11 @@ class AutoEval:
 						if self.mainFile == "":
 							self.clean_file(mainFile)
 					continue
+
+				outFile.write(f"\n<pre>{output}</pre>" + "<br>\n")
+
+				# Run Valgrind
+				ret = self.run_valgrind(outFile, execName)
 
 				# Save outputs
 				self.expectedOutputs.append(output)
@@ -332,9 +337,9 @@ class AutoEval:
 	 
 	def compile_single(self, outFile, source):
 		ret = True
-		outFile.write(f"gcc -Wall -g -c {source}" + " ")
+		outFile.write(f"gcc -Wall -g -pedantic -c {source}" + " ")
 		
-		proc = subprocess.Popen(['gcc', '-Wall', '-g', '-c', source], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		proc = subprocess.Popen(['gcc', '-Wall', '-g', '-pedantic', '-c', source], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		rout, rerr = proc.communicate()
 
 		if rerr == b'':
@@ -365,7 +370,7 @@ class AutoEval:
 
 
 	def link_objects(self, outFile, libDirs, libs, sources):
-		linkCommand = ['gcc', '-Wall', '-g']
+		linkCommand = ['gcc', '-Wall', '-g', '-pedantic']
 
 		# Build command
 		for source in sources:
