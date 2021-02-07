@@ -10,7 +10,8 @@ for d in */ ; do
     cd $d
     for md in *.md ; do
 	    echo "$md"
-	    pandoc -s $md -f gfm -t html5 --output $md.pdf --pdf-engine=wkhtmltopdf --css ../github-pandoc.css
+	    outname=${md%".md"}
+	    pandoc -s $md -f gfm -t html5 --output $outname.pdf --pdf-engine=wkhtmltopdf --css ../github-pandoc.css
 	done
 	cd ..
 done
