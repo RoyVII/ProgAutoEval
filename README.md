@@ -4,7 +4,9 @@
 
 Consiste en dos ficheros: AutoEval.py, que tiene toda la funcionalidad, y runAutoEval.py que ejecuta el programa. El comando para ejecutarlo sería:
 
-> python runAutoEval.py <lista_de_ejercicios\>.csv
+> python runAutoEval.py -f <lista_de_ejercicios\>.csv -P 1
+
+Siendo el argumento *obligatorio* '-f/--file' un fichero con los ejercicios a probar (ver sección de **Requisitos**) y el argumento *opcional* '-P/--plot' un booleano (0 == False, 1 == True) que indica si se quiere hacer una figura resumen (por defecto False).
 
 Los ficheros de python deben colocarse en el mismo directorio en el que se encuentren las carpetas para cada entrega. Por ejemplo:
 
@@ -19,10 +21,29 @@ Los ficheros de python deben colocarse en el mismo directorio en el que se encue
    |--- parejaN/
 </pre>
 
+
+## Salida
+
+El programa generará un resumen en texto plano y un informe detallado en formato *Markdown* para cada ejercicio en las carpetas de cada pareja. Estos informes pueden convertirse a PDF con el script:
+
+> bash convert_md_to_pdf.sh
+
+Además, si se selecciona la opción correspondiente, se generará una tabla resumen con los resultados de todas parejas para cada ejercicio, similar a la siguiente:
+
+![Ejemplo de tabla](table_example.png)
+
+Donde cada color significa:
+- **Verde**: correcto.
+- **Negro**: error al compilar.
+- **Morado**: error al enlazar.
+- **Rojo**: error al ejecutar.
+- **Naranja**: error de Valgrind.
+- **Amarillo**: no se obtiene la salida esperada.
+
 ## Requisitos
 
 ### Python
-Se necesita Python3 solamente, no utiliza ninguna librería especial.
+Se necesita Python3 con **numpy**. Si se quiere hacer plots hace falta **matplotlib**.
 
 ### Solución
 En el mismo directorio donde están las entregas de los estudiantes deberá existir una carpeta llamada **solution** con el código que se utilizará para generar las salidas correctas de cada ejericio.

@@ -1,5 +1,6 @@
 import os
 import subprocess
+import numpy as np
 
 
 # OKGREEN = '\033[92m'
@@ -10,6 +11,17 @@ OKGREEN = '<span style="color:green">'
 WARNING = '<span style="color:orangered">'
 FAIL = '<span style="color:red">'
 ENDC = '</span>'
+
+OK = 0
+ERROR = -2
+OK_BUT = -1
+
+
+COMPILATION_ERR_CODE = -1
+LINKING_ERR_CODE = -2
+EXECUTION_ERR_CODE = -3
+OUTPUT_ERR_CODE = -4
+VALGRIND_ERR_CODE = -5
 
 class AutoEval:
 
@@ -114,6 +126,7 @@ class AutoEval:
 		return
 
 
+
 	###################################
 	# GENERATE OUTPUTS
 	###################################
@@ -129,7 +142,7 @@ class AutoEval:
 		# Go to user dir
 		os.chdir(user)
 
-		print("\tGenerating outputs")
+		print("\tGenerating outputs for exercise "+self.exerciseName)
 
 		with open("report_"+user+"_"+self.exerciseName+".md", 'w') as outFile:
 
@@ -138,7 +151,7 @@ class AutoEval:
 			# Compile sources
 			ret = self.compile_sources(outFile)
 
-			if ret == False:
+			if ret == ERROR:
 				if cleanFiles:
 					self.clear()
 				os.chdir("..")
@@ -162,7 +175,7 @@ class AutoEval:
 				# Compile main
 				ret = self.compile_single(outFile, mainFile)
 
-				if ret == False:
+				if ret == ERROR:
 					continue
 
 				# Link objects
@@ -174,7 +187,7 @@ class AutoEval:
 				# Execute tests
 				ret, output = self.execute(outFile, execName, self.inputArguments)
 
-				if ret == False:
+				if ret == ERROR:
 					if cleanFiles:
 						self.clean_file(execName)
 						if self.mainFile == "":
@@ -227,18 +240,25 @@ class AutoEval:
 
 		print("\tEvaluating "+user)
 
-		with open("report_"+user+"_"+self.exerciseName+".md", 'w') as outFile:
+		feedNums = np.zeros(len(self.tests))
+		testsNames = []
+
+		with open("report_"+user+"_"+self.exerciseName+".md", 'w') as outFile, open("feedback_summary_"+user+".txt", 'a') as sumFile:
 
 			outFile.write("## Exercise %s %s<br>\n"%(self.exerciseName, user))
+			sumFile.write("\n\n## Exercise %s\n"%(self.exerciseName))
 
 			# Compile sources
 			ret = self.compile_sources(outFile)
 
-			if ret == False:
+			if ret == ERROR:
+				sumFile.write("Sources compilation error.\n")
+				feedNums += COMPILATION_ERR_CODE
+
 				if cleanFiles:
 					self.clear()
 				os.chdir("..")
-				return
+				return feedNums, None
 
 			for i, test in enumerate(self.tests):
 				# Generate main file for test
@@ -248,6 +268,9 @@ class AutoEval:
 				mainFile = "main_"+self.exerciseName+"_"+str(i)+".c"
 
 				outFile.write("#### **Test %d: %s**\n"%(i, testName))
+				sumFile.write("%s: "%(testName))
+				testsNames.append(testName)
+
 
 				# Create main file if not provided
 				if self.mainFile == "":
@@ -258,30 +281,51 @@ class AutoEval:
 				# Compile main
 				ret = self.compile_single(outFile, mainFile)
 
-				if ret == False:
+				if ret == ERROR:
+					sumFile.write("Compilation error.\n")
+					feedNums[i] += COMPILATION_ERR_CODE
 					continue
 
 				# Link objects
 				execName = self.link_objects(outFile, self.libDirs, self.libs, self.sourceFiles+[mainFile])
 
 				if execName == "":
+					sumFile.write("Linking error.\n")
+					feedNums[i] += LINKING_ERR_CODE
 					continue
 
 				# Execute tests
 				ret, output = self.execute(outFile, execName, self.inputArguments)
 
-				if ret == False:
+				if ret == ERROR:
+					testFeedback += "Execution error. "
+					feedNums[i] += EXECUTION_ERR_CODE
+
+					'''
 					if cleanFiles:
 						self.clean_file(execName)
 						if self.mainFile == "":
 							self.clean_file(mainFile)
 					continue
+					'''
+				else:
+					# Compare outputs
+					ret = self.compare_outputs(outFile, self.expectedOutputs[i], output)
 
-				# Compare outputs
-				ret = self.compare_outputs(outFile, self.expectedOutputs[i], output)
+					testFeedback = ""
+					if ret == ERROR:
+						testFeedback += "Wrong output. "
+						feedNums[i] += OUTPUT_ERR_CODE
 
 				# Run Valgrind
 				ret = self.run_valgrind(outFile, execName)
+
+				if ret == ERROR:
+					testFeedback += "Memory leaks/errors."
+					feedNums[i] += VALGRIND_ERR_CODE
+
+				testFeedback += "\n"
+				sumFile.write(testFeedback)
 
 
 				# Clean exec and main
@@ -298,7 +342,7 @@ class AutoEval:
 		os.chdir("..")
 
 
-		return
+		return feedNums, testsNames
 
 
 	def write_main(self, mainFile, blocksOrder):
@@ -327,16 +371,15 @@ class AutoEval:
 		outFile.write("#### **Compiling sources...**<br>\n")
 
 		# Compile sources
-		ret = True
+		ret = OK
 		for source in self.sourceFiles:
-			# If one file cannot be compiled ret == False
-			ret = ret and self.compile_single(outFile, source)
+			ret = min(ret, self.compile_single(outFile, source))
 
 		return ret
 
 	 
 	def compile_single(self, outFile, source):
-		ret = True
+		ret = OK
 		outFile.write(f"gcc -Wall -g -pedantic -c {source}" + " ")
 		
 		proc = subprocess.Popen(['gcc', '-Wall', '-g', '-pedantic', '-c', source], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -356,13 +399,15 @@ class AutoEval:
 				#!! TODO: try compiler suggestions
 
 
-				ret = False
+				ret = ERROR
 
 			else:
 				# warning
 				error_str = error_str.replace("warning", WARNING + "warning" + ENDC + "<br>\n")
 				outFile.write(WARNING + "WARNING" + ENDC + "<br>\n")
 				outFile.write(f"\n<pre>{error_str}</pre><br>" + "\n")
+
+				ret = OK_BUT
 				
 
 		return ret
@@ -411,7 +456,7 @@ class AutoEval:
 
 	def execute(self, outFile, execName, inputArguments=""):
 		timeout=5
-		ret = True
+		ret = OK
 
 		if inputArguments != "":
 			inputArguments = " " + inputArguments
@@ -432,12 +477,12 @@ class AutoEval:
 				outFile.write(FAIL + "ERROR" + ENDC + "\n")
 				outFile.write(f"\n<pre>{error_str}</pre>" + "<br>\n")
 
-				ret = False
+				ret = ERROR
 
 		except subprocess.TimeoutExpired as error:
 			outFile.write(FAIL + "TIMEOUT: " + ENDC + "<br>\n")
 			outFile.write(error + "<br>\n")
-			ret = False
+			ret = ERROR
 
 
 		return ret, proc.stdout.decode("utf-8")
@@ -448,7 +493,7 @@ class AutoEval:
 
 	def compare_outputs(self, outFile, expected, obtained):
 		outFile.write("Expected output... ")
-		ret = True
+		ret = OK
 
 		if expected == obtained:
 			outFile.write(OKGREEN + "OK" + ENDC + "<br>\n")
@@ -457,19 +502,19 @@ class AutoEval:
 		elif [c for c in expected if c.isspace() == False] == [c for c in obtained if c.isspace() == False]:
 			outFile.write(WARNING + "OK removing spaces" + ENDC + "<br>\n")
 			outFile.write(f"\n**Expected:**\n<pre>{expected}</pre>" + "<br>\n")
-			outFile.write(f"\n**Obtained:**<pre>{obtained}</pre>" + "<br>\n")
+			outFile.write(f"\n**Obtained:**\n<pre>{obtained}</pre>" + "<br>\n")
 		else:
 			outFile.write(FAIL + "WRONG" + ENDC + "\n")
 			outFile.write(f"\n**Expected:**\n<pre>{expected}</pre>" + "<br>\n")
 			outFile.write(f"\n**Obtained:**\n<pre>{obtained}</pre>" + "<br>\n")
-			ret = False
+			ret = ERROR
 
 		return ret
 
 
 
 	def run_valgrind(self, outFile, execName):
-		ret = True
+		ret = OK
 
 		outFile.write("Running Valgrind... ")
 		proc = subprocess.Popen(['valgrind', '--leak-check=full', './' + execName], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -483,7 +528,7 @@ class AutoEval:
 		else:
 			outFile.write(FAIL + "ERROR" + ENDC + "<br>\n")
 			outFile.write(f"\n<pre> {valgrind_str} </pre>" + "<br>\n")
-			ret = False
+			ret = ERROR
 
 		return ret
 
