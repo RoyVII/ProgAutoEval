@@ -6,7 +6,7 @@ Consiste en dos ficheros: AutoEval.py, que tiene toda la funcionalidad, y runAut
 
 > python runAutoEval.py -f <lista_de_ejercicios\>.csv -P 1
 
-Siendo el argumento *obligatorio* '-f/--file' un fichero con los ejercicios a probar (ver sección de **Requisitos**) y el argumento *opcional* '-P/--plot' un booleano (0 == False, 1 == True) que indica si se quiere hacer una figura resumen (por defecto False).
+Siendo el argumento *obligatorio* `-f/--file` un fichero con los ejercicios a probar (ver sección de **Requisitos**) y el argumento *opcional* `-P/--plot` un booleano (0 == False, 1 == True) que indica si se quiere hacer una figura resumen (por defecto False).
 
 Los ficheros de python deben colocarse en el mismo directorio en el que se encuentren las carpetas para cada entrega. Por ejemplo:
 
