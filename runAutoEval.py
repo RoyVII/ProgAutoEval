@@ -139,19 +139,21 @@ with open(filename, "r") as f:
 	f.readline() # First line with the headers
 
 	for exercise in f:
-		parts = exercise.replace("\n", "").split(",")
+		parts = exercise.replace("\n", "").split(";")
 
 		tp = parts[0]
 		exerciseName = parts[1]
 		sources = [x for x in parts[2].split(" ") if x != ''] # Avoids ['']
 		libDirs = [x for x in parts[3].split(" ") if x != '']
 		libs = [x for x in parts[4].split(" ") if x != '']
-		mainFile = parts[5]
-		inputArguments = parts[6]
+		compileFlags = [x for x in parts[5].split(" ") if x != '']
+		linkFlags = [x for x in parts[6].split(" ") if x != '']
+		mainFile = parts[7]
+		inputArguments = parts[8]
 
-		print("\nTest with arguments: ",tp, exerciseName, sources, libDirs, libs, mainFile, inputArguments)
+		print("\nTest with arguments: ",tp, exerciseName, sources, libDirs, libs, compileFlags, linkFlags, mainFile, inputArguments)
 
-		m = AutoEval.AutoEval(exerciseName, sources, libDirs=libDirs, libs=libs, mainFile=mainFile, inputArguments=inputArguments)
+		m = AutoEval.AutoEval(exerciseName, sources, libDirs=libDirs, libs=libs, compileFlags=compileFlags, linkFlags=linkFlags, mainFile=mainFile, inputArguments=inputArguments)
 		
 		if tp == "library":
 			m.read_template()
@@ -162,7 +164,24 @@ with open(filename, "r") as f:
 		testsResults = []
 
 		for user in subdirs:
+
+			# Check if there is another subfolder
+			ls = [ name for name in os.listdir(user) if os.path.isdir(os.path.join(user, name)) ]
+			anotherLevel = False
+			print(ls)
+			if (len(ls) == 1 and ls[0] == user):
+				os.chdir(user)
+				anotherLevel = True
+
 			res, resNames = m.perform_tests(user)
+
+			# Return to cwd
+			if anotherLevel == True:
+				reports = [user+"/"+f for f in os.listdir(user) if f.startswith("report")]
+				for report in reports:
+					os.replace(report, report.replace(user+"/", ""))
+
+				os.chdir("..")
 
 			testsResults.append(res)
 			if resNames is not None:

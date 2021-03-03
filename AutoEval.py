@@ -1,6 +1,7 @@
 import os
 import subprocess
 import numpy as np
+import shutil
 
 
 # OKGREEN = '\033[92m'
@@ -13,8 +14,8 @@ FAIL = '<span style="color:red">'
 ENDC = '</span>'
 
 OK = 0
-ERROR = -2
-OK_BUT = -1
+ERROR = -1
+OK_BUT = -2
 
 
 COMPILATION_ERR_CODE = -1
@@ -23,13 +24,16 @@ EXECUTION_ERR_CODE = -3
 OUTPUT_ERR_CODE = -4
 VALGRIND_ERR_CODE = -5
 
+BLOCKS_TEMPLATE = 0
+MAINS_TEMPLATE = 1
+
 class AutoEval:
 
 	###################################
 	# CONSTRUCTOR
 	###################################
 
-	def __init__(self, exerciseName, sourceFiles, libDirs=[], libs=[], mainFile="", inputArguments=""):
+	def __init__(self, exerciseName, sourceFiles, libDirs=[], libs=[], compileFlags=[], linkFlags=[], mainFile="", inputArguments=""):
 		self.exerciseName = exerciseName
 
 		self.templateFile = "template_"+exerciseName+".txt"
@@ -37,12 +41,18 @@ class AutoEval:
 		self.mainFile = mainFile
 		self.libDirs = libDirs
 		self.libs = libs
+		self.compileFlags = compileFlags
+		self.linkFlags = linkFlags
 		self.inputArguments = inputArguments
 
-		self.header = []
-		self.blocks = {}
+
 		self.tests = []
 		self.expectedOutputs = []
+		self.templateType = BLOCKS_TEMPLATE
+
+		# In case of blocks template
+		self.header = []
+		self.blocks = {}
 
 		# If main not provided we need to load template
 		if mainFile == "":
@@ -62,17 +72,31 @@ class AutoEval:
 		with open(self.templateFile, 'r') as template:
 
 			line = template.readline()
-			while line != '':
-				if line != "\n":
-					if len(line) > 2 and line[0:3] == "@@@":
-						self.header = []
-						self.read_header(template)
-					elif len(line) > 2 and line[0:3] == "$$$":
-						self.read_block(template, line[4:].replace("\n", ""))
-					elif len(line) > 2 and line[0:3] == "???":
-						self.read_tests(template)
 
+			if len(line) > 2 and line[0:3] == "@$?":
+				self.templateType = MAINS_TEMPLATE
 				line = template.readline()
+
+				while line != '':
+					if line != "\n":
+						self.tests.append(line)
+
+					line = template.readline()
+
+			else:
+				self.templateType = BLOCKS_TEMPLATE
+
+				while line != '':
+					if line != "\n":
+						if len(line) > 2 and line[0:3] == "@@@":
+							self.header = []
+							self.read_header(template)
+						elif len(line) > 2 and line[0:3] == "$$$":
+							self.read_block(template, line[4:].replace("\n", ""))
+						elif len(line) > 2 and line[0:3] == "???":
+							self.read_tests(template)
+
+					line = template.readline()
 
 		self.templateLoaded = True
 
@@ -131,13 +155,12 @@ class AutoEval:
 	# GENERATE OUTPUTS
 	###################################
 
-	def generate_outputs(self):
+	def generate_outputs(self, cleanFiles=True):
 		if self.templateLoaded != True:
 			print("\tTemplate not loaded")
 			return
 
 		user = "solution"
-		cleanFiles = False
 
 		# Go to user dir
 		os.chdir(user)
@@ -161,25 +184,20 @@ class AutoEval:
 				# Generate main file for test
 				parts = test.split(",")
 				testName = parts[0]
-				blocksOrder = parts[1].replace("\n", "").split(" ")
-				mainFile = "main_"+self.exerciseName+"_"+str(i)+".c"
 
 				outFile.write("#### **Test %d: %s**\n"%(i, testName))
 
 				# Create main file if not provided
-				if self.mainFile == "":
-					self.write_main(mainFile, blocksOrder)
-				else:
-					mainFile = self.mainFile
+				mainFile = self.generate_main(parts[1], i)
 
 				# Compile main
-				ret = self.compile_single(outFile, mainFile)
+				ret = self.compile_single(outFile, mainFile, self.compileFlags)
 
 				if ret == ERROR:
 					continue
 
 				# Link objects
-				execName = self.link_objects(outFile, self.libDirs, self.libs, self.sourceFiles+[mainFile])
+				execName = self.link_objects(outFile, self.libDirs, self.libs, self.sourceFiles+[mainFile], self.linkFlags)
 
 				if execName == "":
 					continue
@@ -190,8 +208,7 @@ class AutoEval:
 				if ret == ERROR:
 					if cleanFiles:
 						self.clean_file(execName)
-						if self.mainFile == "":
-							self.clean_file(mainFile)
+
 					continue
 
 				outFile.write(f"\n<pre>{output}</pre>" + "<br>\n")
@@ -206,8 +223,6 @@ class AutoEval:
 				# Clean exec and main
 				if cleanFiles:
 					self.clean_file(execName)
-					if self.mainFile == "":
-						self.clean_file(mainFile)
 
 		# Clean objects
 		if cleanFiles:
@@ -264,8 +279,6 @@ class AutoEval:
 				# Generate main file for test
 				parts = test.split(",")
 				testName = parts[0]
-				blocksOrder = parts[1].replace("\n", "").split(" ")
-				mainFile = "main_"+self.exerciseName+"_"+str(i)+".c"
 
 				outFile.write("#### **Test %d: %s**\n"%(i, testName))
 				sumFile.write("%s: "%(testName))
@@ -273,25 +286,30 @@ class AutoEval:
 
 
 				# Create main file if not provided
-				if self.mainFile == "":
-					self.write_main(mainFile, blocksOrder)
-				else:
-					mainFile = self.mainFile
+				mainFile = self.generate_main(parts[1], i)
 
 				# Compile main
-				ret = self.compile_single(outFile, mainFile)
+				ret = self.compile_single(outFile, mainFile, self.compileFlags)
 
 				if ret == ERROR:
 					sumFile.write("Compilation error.\n")
 					feedNums[i] += COMPILATION_ERR_CODE
+
+					if cleanFiles:
+						if self.mainFile == "":
+							self.clean_file(mainFile)
 					continue
 
 				# Link objects
-				execName = self.link_objects(outFile, self.libDirs, self.libs, self.sourceFiles+[mainFile])
+				execName = self.link_objects(outFile, self.libDirs, self.libs, self.sourceFiles+[mainFile], self.linkFlags)
 
 				if execName == "":
 					sumFile.write("Linking error.\n")
 					feedNums[i] += LINKING_ERR_CODE
+
+					if cleanFiles:
+						if self.mainFile == "":
+							self.clean_file(mainFile)
 					continue
 
 				# Execute tests
@@ -308,6 +326,17 @@ class AutoEval:
 							self.clean_file(mainFile)
 					continue
 					'''
+				elif ret == -3:
+					testFeedback += "Timeout error. "
+					feedNums[i] += EXECUTION_ERR_CODE
+
+					
+					if cleanFiles:
+						self.clean_file(execName)
+						if self.mainFile == "":
+							self.clean_file(mainFile)
+					continue
+					
 				else:
 					# Compare outputs
 					ret = self.compare_outputs(outFile, self.expectedOutputs[i], output)
@@ -345,6 +374,25 @@ class AutoEval:
 		return feedNums, testsNames
 
 
+	def generate_main(self, auxString, testIdx):
+		if self.mainFile == "":
+			if self.templateType == BLOCKS_TEMPLATE:
+				blocksOrder = auxString.replace("\n", "").split(" ")
+				mainFile = "main_"+self.exerciseName+"_"+str(testIdx)+".c"
+				self.write_main(mainFile, blocksOrder)
+
+			elif self.templateType == MAINS_TEMPLATE:
+				mainPath = auxString.replace("\n", "")
+				mainFile = mainPath.split("/")[-1]
+				self.copy_main(mainPath)
+
+		else:
+			mainFile = self.mainFile
+
+		return mainFile
+
+
+
 	def write_main(self, mainFile, blocksOrder):
 		with open(mainFile, 'w') as main:
 			for line in self.header:
@@ -352,19 +400,20 @@ class AutoEval:
 
 			main.write("\n\n/**************************/\n\n")
 
-			main.write("int main(int argc, char * argv[]) {\n")
+			#main.write("int main(int argc, char * argv[]) {\n")
 
 			for blockId in blocksOrder:
 				for line in self.blocks[blockId]:
-					main.write("\t"+line)
+					main.write(line)
 
 
-			main.write("}")
+			#main.write("}")
 
 			main.write("\n\n/**************************/\n\n")
 
 
-
+	def copy_main(self, mainPath):
+		shutil.copy2(mainPath, ".")
 
 
 	def compile_sources(self, outFile):
@@ -373,16 +422,27 @@ class AutoEval:
 		# Compile sources
 		ret = OK
 		for source in self.sourceFiles:
-			ret = min(ret, self.compile_single(outFile, source))
+			ret = min(ret, self.compile_single(outFile, source, self.compileFlags))
 
 		return ret
 
 	 
-	def compile_single(self, outFile, source):
+	def compile_single(self, outFile, source, flags):
 		ret = OK
-		outFile.write(f"gcc -Wall -g -pedantic -c {source}" + " ")
+
+		compileCommand = ['gcc']
+
+		# Build command
+		for flag in flags:
+			compileCommand.append(flag)
+
+		compileCommand.append("-c")
+
+		compileCommand.append(source)
+
+		outFile.write(" ".join(compileCommand) + " ")
 		
-		proc = subprocess.Popen(['gcc', '-Wall', '-g', '-pedantic', '-c', source], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		proc = subprocess.Popen(compileCommand, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 		rout, rerr = proc.communicate()
 
 		if rerr == b'':
@@ -414,10 +474,13 @@ class AutoEval:
 
 
 
-	def link_objects(self, outFile, libDirs, libs, sources):
-		linkCommand = ['gcc', '-Wall', '-g', '-pedantic']
+	def link_objects(self, outFile, libDirs, libs, sources, flags):
+		linkCommand = ['gcc']
 
 		# Build command
+		for flag in flags:
+			linkCommand.append(flag)
+
 		for source in sources:
 			linkCommand.append(source.replace(".c", ".o"))
 
@@ -457,6 +520,7 @@ class AutoEval:
 	def execute(self, outFile, execName, inputArguments=""):
 		timeout=5
 		ret = OK
+		retStr = ""
 
 		if inputArguments != "":
 			inputArguments = " " + inputArguments
@@ -464,6 +528,7 @@ class AutoEval:
 		outFile.write("./"+ execName + inputArguments + " ")
 		try:
 			proc = subprocess.run(['./' + execName + inputArguments], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, shell=True)
+			retStr = proc.stdout.decode("utf-8")
 
 			if proc.returncode != 0:
 				outFile.write(WARNING + "return code is " + str(proc.returncode) + ENDC + " ")
@@ -480,12 +545,11 @@ class AutoEval:
 				ret = ERROR
 
 		except subprocess.TimeoutExpired as error:
-			outFile.write(FAIL + "TIMEOUT: " + ENDC + "<br>\n")
-			outFile.write(error + "<br>\n")
-			ret = ERROR
+			outFile.write(FAIL + "TIMEOUT: " + ENDC + " ")
+			outFile.write(str(timeout) + " seconds <br>\n")
+			ret = -3
 
-
-		return ret, proc.stdout.decode("utf-8")
+		return ret, retStr
 
 
 
