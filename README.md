@@ -54,35 +54,39 @@ En el mismo directorio donde están las entregas de los estudiantes deberá exis
 
 El fichero que se pasa como argumento tendrá la lista de ejercicios que se quieren probar, siguiendo el siguiente formato CSV:
 
-- **Tipo:** puede ser *main* o *library*, en función de si se quiere probar un main o una librería. **Obligatorio**.
 - **Nombre:** nombre del ejercicio a probar. E.g. "p1_e1" **Obligatorio**.
 - **Ficheros fuente:** lista separada por espacios. E.g. "node.c graph.c"
 - **Directorios de librerías:** lista separada por espacios. E.g. "-L. -L/home"
+- **Directorios de cabeceras (headers):** lista separada por espacios. E.g. "-I. -I/home"
 - **Librerías:** lista separada por espacios. E.g. "-lm -lstack_fp"
 - **Etiquetas de compilación:** lista separada por espacios. E.g. "-g -Wall -pedantic"
 - **Etiquetas de enlazado:** lista separada por espacios. E.g. "-Wl,--wrap,malloc"
 - **Fichero main:** si se quiere probar un main indicar el fichero. E.g. "p1_e1.c"
-- **Argumentos de entrada:** lista separada por espacios. E.g. "g1.txt 111 222"
 
 Cada campo estará separado por punto y coma `;`. La primera línea debe ser:
 
-`type;exerciseName;sourceFiles;libDirs;libs;compileFlags;linkFlags;mainFile;inputArguments`
+`exerciseName;sourceFiles;libDirs;includesDirs;libs;compileFlags;linkFlags;mainFile`
 
 Un ejemplo de este tipo de fichero sería (se puede abrir y editar con Excel y similares):
 
-> type;exerciseName;sourceFiles;libDirs;libs;compileFlags;linkFlags;mainFile;inputArguments
-> library;graph;vertex.c graph.c;;;-g -Wall -pedantic;-Wl,--wrap,malloc;;
+> exerciseName;sourceFiles;libDirs;includesDirs;libs;compileFlags;linkFlags;mainFile
+> graph;vertex.c graph.c;;;;-g -Wall -pedantic;-Wl,--wrap,malloc;
 
 
 ### Plantillas
 En el caso de que la prueba sea de tipo **library** el programa buscará en su mismo directorio una plantilla con la que generar los distintos mains de pruebas a utilizar. Esta plantilla debe llamarse `template_<exerciseName>.txt`, donde *exerciseName* es el nombre del ejercicio a probar que figura en la lista de pruebas.
 
-Estas plantillas pueden ser de dos tipos. El primero consistirá en una lista de pruebas para cada cual habrá asociado un fichero main. El fichero debe comenzar con una línea que contenga `@$?` seguido se una línea por cada prueba. Cada línea tendrá el nombre de la prueba y la ruta al fichero main, ambos elementos separados por una coma. El fichero main se copiará a las carpetas de cada pareja, por lo que debe tener un nombre distinto a los ficheros que allí se encuentren. Un ejemplo sería:
+Estas plantillas pueden ser de dos tipos. El primero consistirá en una lista de pruebas para cada cual habrá asociado un fichero main. El fichero puede tener un bloque delimitado por los símbolos `@@@` que indiquen las rutas a los ficheros que sean necesarios para ejecutar el programa, los cuales copiará a cada carpeta. El bloque principal se encontrará entre los símbolos `???` y en él cada línea tendrá el nombre de la prueba y la lista de argumentos de entrada del programa, ambos elementos separados por una coma. El fichero main se copiará a las carpetas de cada pareja, por lo que debe tener un nombre distinto a los ficheros que allí se encuentren. Un ejemplo sería:
 <pre>
-@$?
-Test with main 1,/home/my_mains/test_main_1.c
-Test with main 2,/home/my_mains/test_main_2.c
-</pre>pre>
+@@@
+/path/to/my/file.txt
+@@@
+
+
+???
+Testing my first main,file.txt foo 1 "a long string as argument"
+??? 
+</pre>
 
 El segundo tipo de plantilla contendrá una serie de bloques de código que se combinarán para generar los mains que ejecutar. Los elementos que componen estas plantillas son los siguientes.
 

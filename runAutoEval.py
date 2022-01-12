@@ -25,6 +25,8 @@ def plotTable(title, rowsNames, columnNames, data):
 
 
 	for i in range(nRows):
+		rowsNames[i] = "Test %d: %s"%(i, rowsNames[i])
+
 		cellText.append([])
 		colors.append([])
 
@@ -141,23 +143,21 @@ with open(filename, "r") as f:
 	for exercise in f:
 		parts = exercise.replace("\n", "").split(";")
 
-		tp = parts[0]
-		exerciseName = parts[1]
-		sources = [x for x in parts[2].split(" ") if x != ''] # Avoids ['']
-		libDirs = [x for x in parts[3].split(" ") if x != '']
+		exerciseName = parts[0]
+		sources = [x for x in parts[1].split(" ") if x != ''] # Avoids ['']
+		libDirs = [x for x in parts[2].split(" ") if x != '']
+		includeDirs = [x for x in parts[3].split(" ") if x != '']
 		libs = [x for x in parts[4].split(" ") if x != '']
 		compileFlags = [x for x in parts[5].split(" ") if x != '']
 		linkFlags = [x for x in parts[6].split(" ") if x != '']
 		mainFile = parts[7]
-		inputArguments = parts[8]
 
-		print("\nTest with arguments: ",tp, exerciseName, sources, libDirs, libs, compileFlags, linkFlags, mainFile, inputArguments)
+		print("\nTest with arguments: ", exerciseName, sources, libDirs, libs, compileFlags, linkFlags, mainFile)
 
-		m = AutoEval.AutoEval(exerciseName, sources, libDirs=libDirs, libs=libs, compileFlags=compileFlags, linkFlags=linkFlags, mainFile=mainFile, inputArguments=inputArguments)
+		m = AutoEval.AutoEval(exerciseName, sources, libDirs=libDirs, libs=libs, compileFlags=compileFlags, linkFlags=linkFlags, mainFile=mainFile)
 		
-		if tp == "library":
-			m.read_template()
-
+		
+		m.read_template()
 		m.generate_outputs()
 
 		testsNames = []
@@ -168,7 +168,6 @@ with open(filename, "r") as f:
 			# Check if there is another subfolder
 			ls = [ name for name in os.listdir(user) if os.path.isdir(os.path.join(user, name)) ]
 			anotherLevel = False
-			print(ls)
 			if (len(ls) == 1 and ls[0] == user):
 				os.chdir(user)
 				anotherLevel = True

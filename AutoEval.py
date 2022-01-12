@@ -2,6 +2,7 @@ import os
 import subprocess
 import numpy as np
 import shutil
+import re
 
 
 # OKGREEN = '\033[92m'
@@ -33,7 +34,7 @@ class AutoEval:
 	# CONSTRUCTOR
 	###################################
 
-	def __init__(self, exerciseName, sourceFiles, libDirs=[], libs=[], compileFlags=[], linkFlags=[], mainFile="", inputArguments=""):
+	def __init__(self, exerciseName, sourceFiles, libDirs=[], libs=[], compileFlags=[], linkFlags=[], mainFile=""):
 		self.exerciseName = exerciseName
 
 		self.templateFile = "template_"+exerciseName+".txt"
@@ -43,7 +44,6 @@ class AutoEval:
 		self.libs = libs
 		self.compileFlags = compileFlags
 		self.linkFlags = linkFlags
-		self.inputArguments = inputArguments
 
 
 		self.tests = []
@@ -54,13 +54,7 @@ class AutoEval:
 		self.header = []
 		self.blocks = {}
 
-		# If main not provided we need to load template
-		if mainFile == "":
-			self.templateLoaded = False
-		else:
-			self.templateLoaded = True
-			self.tests = ["Test main "+ mainFile+",0"]
-
+		self.templateLoaded = False
 		self.outputsGenerated = False
 
 
@@ -69,6 +63,29 @@ class AutoEval:
 	###################################
 
 	def read_template(self):
+		if self.mainFile == "":
+			self.read_template_library()
+		else:
+			self.read_template_main()
+
+	def read_template_main(self):
+		with open(self.templateFile, 'r') as template:
+
+			line = template.readline()
+
+			while line != '':
+				if line != "\n":
+					if len(line) > 2 and line[0:3] == "@@@":
+						self.header = []
+						self.read_header(template)
+					elif len(line) > 2 and line[0:3] == "???":
+						self.read_tests(template)
+
+				line = template.readline()
+
+		self.templateLoaded = True
+
+	def read_template_library(self):
 		with open(self.templateFile, 'r') as template:
 
 			line = template.readline()
@@ -188,7 +205,7 @@ class AutoEval:
 				outFile.write("#### **Test %d: %s**\n"%(i, testName))
 
 				# Create main file if not provided
-				mainFile = self.generate_main(parts[1], i)
+				mainFile, inputArguments = self.generate_main(parts[1], i)
 
 				# Compile main
 				ret = self.compile_single(outFile, mainFile, self.compileFlags)
@@ -203,21 +220,21 @@ class AutoEval:
 					continue
 
 				# Execute tests
-				ret, output = self.execute(outFile, execName, self.inputArguments)
+				ret, output = self.execute(outFile, execName, inputArguments)
 
-				if ret == ERROR:
+				if ret == -3:
 					if cleanFiles:
 						self.clean_file(execName)
 
 					continue
 
+				# Save outputs
+				self.expectedOutputs.append(output)
+
 				outFile.write(f"\n<pre>{output}</pre>" + "<br>\n")
 
 				# Run Valgrind
-				ret = self.run_valgrind(outFile, execName)
-
-				# Save outputs
-				self.expectedOutputs.append(output)
+				ret = self.run_valgrind(outFile, execName, inputArguments)
 
 
 				# Clean exec and main
@@ -284,9 +301,11 @@ class AutoEval:
 				sumFile.write("%s: "%(testName))
 				testsNames.append(testName)
 
+				testFeedback = ""
+
 
 				# Create main file if not provided
-				mainFile = self.generate_main(parts[1], i)
+				mainFile, inputArguments = self.generate_main(parts[1], i)
 
 				# Compile main
 				ret = self.compile_single(outFile, mainFile, self.compileFlags)
@@ -313,7 +332,7 @@ class AutoEval:
 					continue
 
 				# Execute tests
-				ret, output = self.execute(outFile, execName, self.inputArguments)
+				ret, output = self.execute(outFile, execName, inputArguments)
 
 				if ret == ERROR:
 					testFeedback += "Execution error. "
@@ -347,7 +366,7 @@ class AutoEval:
 						feedNums[i] += OUTPUT_ERR_CODE
 
 				# Run Valgrind
-				ret = self.run_valgrind(outFile, execName)
+				ret = self.run_valgrind(outFile, execName, inputArguments)
 
 				if ret == ERROR:
 					testFeedback += "Memory leaks/errors."
@@ -375,6 +394,8 @@ class AutoEval:
 
 
 	def generate_main(self, auxString, testIdx):
+		inputArguments = ""
+
 		if self.mainFile == "":
 			if self.templateType == BLOCKS_TEMPLATE:
 				blocksOrder = auxString.replace("\n", "").split(" ")
@@ -384,12 +405,16 @@ class AutoEval:
 			elif self.templateType == MAINS_TEMPLATE:
 				mainPath = auxString.replace("\n", "")
 				mainFile = mainPath.split("/")[-1]
-				self.copy_main(mainPath)
+				self.copy_file(mainPath)
 
 		else:
 			mainFile = self.mainFile
+			inputArguments = auxString.replace("\n", "")
 
-		return mainFile
+			for path in self.header:
+				self.copy_file(path.replace("\n", ""))
+
+		return mainFile, inputArguments
 
 
 
@@ -412,8 +437,12 @@ class AutoEval:
 			main.write("\n\n/**************************/\n\n")
 
 
-	def copy_main(self, mainPath):
-		shutil.copy2(mainPath, ".")
+	def copy_file(self, path):
+		try:
+			shutil.copy2(path, ".")
+		except shutil.SameFileError:
+			pass
+		return
 
 
 	def compile_sources(self, outFile):
@@ -521,17 +550,25 @@ class AutoEval:
 		timeout=5
 		ret = OK
 		retStr = ""
+		inputArgumentsArray = ["./"+execName]
+
+		#for arg in inputArguments.split(" "):
+		#	inputArgumentsArray.append(arg)
+
+		# To treat argument within quotes as a single element
+		for arg in re.findall(r'(?:[^\s,"]|"(?:\\.|[^"])*")+', inputArguments):
+			inputArgumentsArray.append(arg)
 
 		if inputArguments != "":
 			inputArguments = " " + inputArguments
 
 		outFile.write("./"+ execName + inputArguments + " ")
 		try:
-			proc = subprocess.run(['./' + execName + inputArguments], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, shell=True)
+			proc = subprocess.run(inputArgumentsArray, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, shell=False)
 			retStr = proc.stdout.decode("utf-8")
 
 			if proc.returncode != 0:
-				outFile.write(WARNING + "return code is " + str(proc.returncode) + ENDC + " ")
+				outFile.write(OKGREEN + "return code is " + str(proc.returncode) + ENDC + " ")
 			
 			if proc.stderr == b'':
 				outFile.write(OKGREEN + "OK" + ENDC + "<br>\n")
@@ -547,6 +584,10 @@ class AutoEval:
 		except subprocess.TimeoutExpired as error:
 			outFile.write(FAIL + "TIMEOUT: " + ENDC + " ")
 			outFile.write(str(timeout) + " seconds <br>\n")
+			ret = -3
+		except UnicodeDecodeError as error:
+			outFile.write(FAIL + "ERROR: " + ENDC + " ")
+			outFile.write(" unknown characters in output <br>\n")
 			ret = -3
 
 		return ret, retStr
@@ -577,21 +618,36 @@ class AutoEval:
 
 
 
-	def run_valgrind(self, outFile, execName):
+	def run_valgrind(self, outFile, execName, inputArguments=""):
 		ret = OK
+		timeout = 120
 
-		outFile.write("Running Valgrind... ")
-		proc = subprocess.Popen(['valgrind', '--leak-check=full', './' + execName], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		rout, rerr = proc.communicate()
-		valgrind_str = rerr.decode("utf-8")
-		valgrind_lines = valgrind_str.split("\n")
+		inputArgumentsArray = ['valgrind', '--leak-check=full', "./"+execName]
 
-		if "ERROR SUMMARY: 0 errors from 0 contexts" in valgrind_str:
-			outFile.write(OKGREEN + "OK" + ENDC + "<br>\n")
-			outFile.write(f"\n<pre> {valgrind_lines[-2]} </pre>" + "<br>\n")
-		else:
-			outFile.write(FAIL + "ERROR" + ENDC + "<br>\n")
-			outFile.write(f"\n<pre> {valgrind_str} </pre>" + "<br>\n")
+		for arg in inputArguments.split(" "):
+			inputArgumentsArray.append(arg)
+
+		outFile.write('valgrind --leak-check=full ./' + execName +" "+ inputArguments+" ")
+		#proc = subprocess.Popen(['valgrind', '--leak-check=full', './' + execName, inputArguments], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		#rout, rerr = proc.communicate()
+		#valgrind_str = rerr.decode("utf-8")
+		#valgrind_lines = valgrind_str.split("\n")
+
+		try:
+			proc = subprocess.run(inputArgumentsArray, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, shell=False)
+			valgrind_str = proc.stderr.decode("utf-8")
+			valgrind_lines = valgrind_str.split("\n")
+
+			if "ERROR SUMMARY: 0 errors from 0 contexts" in valgrind_str:
+				outFile.write(OKGREEN + "OK" + ENDC + "<br>\n")
+				outFile.write(f"\n<pre> {valgrind_lines[-2]} </pre>" + "<br>\n")
+			else:
+				outFile.write(FAIL + "ERROR" + ENDC + "<br>\n")
+				outFile.write(f"\n<pre> {valgrind_str} </pre>" + "<br>\n")
+				ret = ERROR
+		except subprocess.TimeoutExpired as error:
+			outFile.write(FAIL + "TIMEOUT: " + ENDC + " ")
+			outFile.write(str(timeout) + " seconds <br>\n")
 			ret = ERROR
 
 		return ret
